@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: black --check .
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      - run: mypy semantic_vector_router/ --ignore-missing-imports
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e ".[dev]"
+      - run: pytest tests/unit/ -v --timeout=60
+      - run: pytest tests/unit/ --cov=semantic_vector_router --cov-report=xml
+      - uses: codecov/codecov-action@v4
+        if: matrix.python-version == '3.12'
+        with:
+          file: coverage.xml
+
+  functional:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev,voyage]"
+      - run: pytest tests/functional/ -v -s --timeout=300
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+
+  integration:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    needs: [test]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev,voyage]"
+      - run: pytest tests/integration/ -v -s --timeout=600 -m integration
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+
+  publish:
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [lint, typecheck, test]
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install build
+      - run: python -m build
+      - uses: pypa/gh-action-pypi-publish@release/v1
