@@ -35,6 +35,23 @@ flowchart TD
     end
 ```
 
+Structurally, SVR is a thin management plane between your application and the vector backend. MongoDB always holds the metadata/control plane — partition state, distributed locks, operation history — regardless of where the vectors themselves live.
+
+```mermaid
+flowchart TB
+    App["Your application"] -->|"search / ingest"| SVR
+
+    subgraph SVR["SVR — management plane"]
+        Router["Router<br/>explicit → filter-map → centroid → fan-out"]
+        Life["Index lifecycle<br/>create · split · rebalance · retire"]
+        Health["Health detection<br/>5 signals"]
+    end
+
+    SVR --> Atlas[("MongoDB Atlas<br/>Vector Search")]
+    SVR -. roadmap .-> PG[("Postgres / pgvector")]
+    SVR <-->|"partition state · locks · history"| Meta[("svr_metadata<br/>control plane")]
+```
+
 ## What it does
 
 | Area | Capability |
